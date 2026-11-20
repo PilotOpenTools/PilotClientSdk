@@ -6,7 +6,7 @@
 		<UseWPF>true</UseWPF>
 		<LangVersion>latest</LangVersion>
 		<Nullable>disable</Nullable>
-		<Version>2.1.1</Version>
+		<Version>2.1.2</Version>
 		<AssemblyName>113Pilot.ClientSdk.ext2</AssemblyName>
 		<RootNamespace>Pilot.ClientSdk</RootNamespace>
 		<OutputType>Library</OutputType>
@@ -35,9 +35,15 @@
 	-->
 	<PropertyGroup>
 		<PackageId>Pilot.ClientSdk</PackageId>
-		<Authors>CICD</Authors>
+		<Authors>PilotOpenTools</Authors>
+		<Company>PilotOpenTools</Company>
+		<PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+		<PackageProjectUrl>https://github.com/PilotOpenTools/PilotClientSdk</PackageProjectUrl>
+		<RepositoryUrl>https://github.com/PilotOpenTools/PilotClientSdk</RepositoryUrl>
+		<RepositoryType>git</RepositoryType>
+		<PackageIcon>icon.png</PackageIcon>
 		<Description>Общий модуль для клиентских модулей Pilot: статистика использования (Grafana), проверка загрузки модулей и общие методы SDK. Только для компиляции: в клиенте сборку загружает модуль Pilot.ClientSdk.</Description>
-		<PackageTags>pilot;ascon;cicd</PackageTags>
+		<PackageTags>pilot;pilot-ice;pilot-bim;ascon;pilotopentools;telemetry;sdk</PackageTags>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<IsPackable>true</IsPackable>
 		<IncludeBuildOutput>false</IncludeBuildOutput>
@@ -85,6 +91,7 @@
 	<ItemGroup>
 		<None Update="Pilot.ClientSdk.config.json" CopyToOutputDirectory="PreserveNewest" />
 		<None Include="README.md" Pack="true" PackagePath="\" />
+		<None Include="docs\images\icon.png" Pack="true" PackagePath="\" Visible="false" />
 	</ItemGroup>
 
 	<ItemGroup>

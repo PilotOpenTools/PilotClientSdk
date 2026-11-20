@@ -23,7 +23,7 @@ namespace Pilot.ClientSdk.Pilot
 
         public string Key => SettingKey;
 
-        public string Title => "Модули общие настройки";
+        public string Title => "PilotOpenTools отправка статистики";
 
         public FrameworkElement Editor
         {
