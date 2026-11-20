@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6
+        with:
+          dotnet-version: 10.0.x
+
+      # CopyToPilot=false: Debug-сборка не копирует модуль в папку клиента Pilot
+      - name: Build
+        run: dotnet build Pilot.ClientSdk.sln -c Release -p:CopyToPilot=false --nologo
+
+      # Интеграционный тест со службой статистики без CLIENTSDK_IT_URL пропускается
+      - name: Test
+        run: dotnet test Pilot.ClientSdk.sln -c Release --no-build --nologo
+
+      - name: Pack
+        run: dotnet pack Pilot.ClientSdk.csproj -c Release --no-build -o artifacts --nologo
