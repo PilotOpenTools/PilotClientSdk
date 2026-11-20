@@ -12,7 +12,7 @@ using Pilot.ClientSdk.Infrastructure;
 namespace Pilot.ClientSdk.Pilot
 {
     /// <summary>
-    /// Редактор раздела «Модули общие настройки». Каждое изменение сразу пишется в значение настройки
+    /// Редактор раздела «PilotOpenTools отправка статистики». Каждое изменение сразу пишется в значение настройки
     /// (<see cref="ISettingValueProvider.SetValue"/>), Pilot сохраняет его кнопкой «ОК»/«Применить» окна настроек.
     /// Окно собирается в коде, без XAML - как <see cref="Startup.StartupWindow"/>.
     /// </summary>

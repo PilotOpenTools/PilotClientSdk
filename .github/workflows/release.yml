@@ -8,6 +8,8 @@ on:
 
 permissions:
   contents: write
+  packages: write # GitHub Packages: пакет Pilot.ClientSdk в nuget.pkg.github.com/PilotOpenTools
+  id-token: write # Trusted Publishing nuget.org: временный ключ API по токену OIDC, секрет не хранится
 
 concurrency:
   group: release-${{ github.ref }}
@@ -89,3 +91,39 @@ jobs:
             gh release create $env:GITHUB_REF_NAME --repo $env:GITHUB_REPOSITORY --verify-tag --title "PilotClientSdk $env:GITHUB_REF_NAME" --notes-file release-notes.md @files
           }
           if ($LASTEXITCODE) { throw "gh release завершился с кодом $LASTEXITCODE" }
+
+      # nuget.pkg.github.com требует вход и для чтения, поэтому основной источник для модулей - nuget.org (шаг ниже).
+      - name: Push to GitHub Packages
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          foreach ($pkg in Get-ChildItem artifacts -Filter *.nupkg) {
+            dotnet nuget push $pkg.FullName --source "https://nuget.pkg.github.com/$($env:GITHUB_REPOSITORY_OWNER)/index.json" --api-key $env:GH_TOKEN --skip-duplicate
+            if ($LASTEXITCODE -ne 0) { throw "dotnet nuget push $($pkg.Name) в GitHub Packages завершился с кодом $LASTEXITCODE" }
+          }
+
+      # Политика Trusted Publishing на nuget.org привязана к репозиторию PilotOpenTools/PilotClientSdk и файлу release.yml;
+      # имя пользователя nuget.org - переменная репозитория NUGET_USER (Settings / Secrets and variables / Actions / Variables).
+      # Публикация необратима: версию можно только скрыть.
+      - name: NuGet login
+        id: nuget-login
+        if: vars.NUGET_USER != ''
+        uses: NuGet/login@v1
+        with:
+          user: ${{ vars.NUGET_USER }}
+
+      - name: Push to nuget.org
+        if: vars.NUGET_USER != ''
+        shell: pwsh
+        env:
+          NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
+        run: |
+          foreach ($pkg in Get-ChildItem artifacts -Filter *.nupkg) {
+            dotnet nuget push $pkg.FullName --source https://api.nuget.org/v3/index.json --api-key $env:NUGET_API_KEY --skip-duplicate
+            if ($LASTEXITCODE -ne 0) { throw "dotnet nuget push $($pkg.Name) в nuget.org завершился с кодом $LASTEXITCODE" }
+          }
+
+      - name: nuget.org not configured
+        if: vars.NUGET_USER == ''
+        run: echo "::warning::Пакет не отправлен в nuget.org - задайте переменную репозитория NUGET_USER и политику Trusted Publishing на nuget.org (README, «Выпуск»)."
