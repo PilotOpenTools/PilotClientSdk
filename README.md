@@ -4,9 +4,9 @@
 
 [![CI](https://github.com/PilotOpenTools/PilotClientSdk/actions/workflows/ci.yml/badge.svg)](https://github.com/PilotOpenTools/PilotClientSdk/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/PilotOpenTools/PilotClientSdk)](https://github.com/PilotOpenTools/PilotClientSdk/releases/latest)
-[![NuGet](https://img.shields.io/nuget/v/Pilot.ClientSdk)](https://www.nuget.org/packages/Pilot.ClientSdk)
+[![NuGet](https://img.shields.io/nuget/v/PilotClientSdk)](https://www.nuget.org/packages/PilotClientSdk)
 
-Общий модуль для клиентских модулей Pilot-ICE Enterprise и Pilot-BIM. Модуль `113Pilot.ClientSdk.ext2` назначается пользователям на сервере Pilot, а другие модули подключают его NuGet-пакетом `Pilot.ClientSdk` и получают готовую статистику, проверку загрузки и общие методы SDK.
+Общий модуль для клиентских модулей Pilot-ICE Enterprise и Pilot-BIM. Модуль `113Pilot.ClientSdk.ext2` назначается пользователям на сервере Pilot, а другие модули подключают его NuGet-пакетом `PilotClientSdk` и получают готовую статистику, проверку загрузки и общие методы SDK.
 
 [Руководство](docs/guide.md) · [Скачать релиз](https://github.com/PilotOpenTools/PilotClientSdk/releases/latest) · [История изменений](CHANGELOG.md)
 
@@ -31,20 +31,21 @@
 | Файл | Что это |
 |---|---|
 | `113Pilot.ClientSdk.ext2-<версия>.zip` | модуль для загрузки на сервер Pilot (через Pilot-myAdmin или вкладку «Модули» PilotProAdmin). Назначьте его всем пользователям раньше модулей, которые на нём построены |
-| `Pilot.ClientSdk.<версия>.nupkg` | NuGet-пакет для разработчиков модулей: сборка в `ref/net48`, только для компиляции |
+| `PilotClientSdk.<версия>.nupkg` | Пакет для NuGet.org со сборкой в `ref/net48` для компиляции модулей |
+| `Pilot.ClientSdk.<версия>.nupkg` | Пакет с той же сборкой для GitHub Packages и закрытых реестров |
 | `SHA256SUMS.txt` | контрольные суммы |
 
-Пакет `Pilot.ClientSdk` публикуется в [nuget.org](https://www.nuget.org/packages/Pilot.ClientSdk): отдельный источник пакетов модулю не нужен.
+Пакет `PilotClientSdk` доступен на NuGet.org. [Страница пакета](https://www.nuget.org/packages/PilotClientSdk)
 
 ```powershell
-dotnet add package Pilot.ClientSdk
+dotnet add package PilotClientSdk
 ```
 
 ```xml
-<PackageReference Include="Pilot.ClientSdk" Version="2.1.3" />
+<PackageReference Include="PilotClientSdk" Version="2.1.4" />
 ```
 
-Тот же пакет лежит в [GitHub Packages](https://github.com/PilotOpenTools/PilotClientSdk/pkgs/nuget/Pilot.ClientSdk) (нужен вход с токеном `read:packages`) и файлом в релизе - для закрытого контура его кладут в реестр пакетов своего GitLab.
+Потребители GitHub Packages и закрытых реестров GitLab используют идентификатор `Pilot.ClientSdk`. Для чтения из GitHub Packages нужен токен `read:packages`. [Страница пакета в GitHub](https://github.com/PilotOpenTools/PilotClientSdk/pkgs/nuget/Pilot.ClientSdk)
 
 Сборка в пакете не копируется в `bin` и в zip вашего модуля: в клиенте её уже загрузил `113Pilot.ClientSdk.ext2`, вторая копия дала бы конфликт типов.
 
@@ -107,9 +108,9 @@ Debug-сборка копирует модуль в `%LocalAppData%\ASCON\Pilot-
    git push origin main vX.Y.Z
    ```
 
-3. Workflow [release.yml](.github/workflows/release.yml) сверит тег с версией, соберёт и проверит решение, опубликует релиз с zip модуля, пакетом и контрольными суммами и отправит пакет в GitHub Packages и nuget.org. Описание релиза берётся из раздела версии в `CHANGELOG.md`.
+3. Workflow сверит тег с версией, соберёт и проверит решение, опубликует GitHub Release с zip модуля, обоими пакетами и контрольными суммами. Затем он отправит `Pilot.ClientSdk` в GitHub Packages и `PilotClientSdk` на NuGet.org. Описание релиза берётся из раздела версии в `CHANGELOG.md`. [release.yml](.github/workflows/release.yml)
 
-Публикация в nuget.org идёт через [Trusted Publishing](https://learn.microsoft.com/nuget/nuget-org/trusted-publishing): задание получает от GitHub токен OIDC и меняет его в nuget.org на ключ API, который живёт час. Постоянного ключа нет ни в репозитории, ни в секретах, поэтому открытый репозиторий ничем не рискует. Политика на nuget.org (профиль `tsaregorlionheart`, раздел Trusted Publishing): владелец `PilotOpenTools`, репозиторий `PilotClientSdk`, файл `release.yml`. Версия в nuget.org необратима: её можно только скрыть.
+Для публикации на NuGet.org workflow получает временный ключ по OIDC. Политика профиля `mahach` разрешает пакеты `PilotClientSdk*` из `PilotOpenTools/PilotClientSdk` через `release.yml`. Если загрузка пакета не удалась, запустите workflow Release вручную и передайте тег уже созданного GitHub Release. [Документация Trusted Publishing](https://learn.microsoft.com/nuget/nuget-org/trusted-publishing)
 
 В GitLab стенда PilotProAdmin модуль ведётся по схеме веток `dev` / `release/*` / `main` с выкладкой на тест, стейдж и прод: этим занимается [.gitlab-ci.yml](.gitlab-ci.yml), подробно в [руководстве](docs/guide.md#4-сборка-выпуск-cicd).
 
