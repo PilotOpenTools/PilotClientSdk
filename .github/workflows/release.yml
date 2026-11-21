@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Тег выпущенного релиза, пакет которого отправить в nuget.org (например v2.1.2)'
+        description: 'Тег выпущенного релиза, пакет которого отправить в nuget.org (например v2.1.3)'
         required: true
 
 permissions:
@@ -114,6 +114,7 @@ jobs:
       # Trusted Publishing nuget.org: GitHub выдаёт заданию токен OIDC, nuget.org меняет его на ключ API на 1 час.
       # Постоянного ключа нет ни в репозитории, ни в секретах. Политика на nuget.org (профиль tsaregorlionheart):
       # владелец PilotOpenTools, репозиторий PilotClientSdk, файл release.yml. Публикация необратима: версию можно только скрыть.
+      # Без --skip-duplicate: с ним ответ 409 Conflict - лишь предупреждение, и шаг зелёный, хотя пакет не опубликован (так было с 2.1.2).
       - name: NuGet login
         id: nuget-login
         uses: NuGet/login@v1
@@ -126,7 +127,7 @@ jobs:
           NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
         run: |
           foreach ($pkg in Get-ChildItem artifacts -Filter *.nupkg) {
-            dotnet nuget push $pkg.FullName --source https://api.nuget.org/v3/index.json --api-key $env:NUGET_API_KEY --skip-duplicate
+            dotnet nuget push $pkg.FullName --source https://api.nuget.org/v3/index.json --api-key $env:NUGET_API_KEY
             if ($LASTEXITCODE -ne 0) { throw "dotnet nuget push $($pkg.Name) в nuget.org завершился с кодом $LASTEXITCODE" }
           }
 
@@ -157,5 +158,5 @@ jobs:
           NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
         run: |
           for pkg in artifacts/*.nupkg; do
-            dotnet nuget push "$pkg" --source https://api.nuget.org/v3/index.json --api-key "$NUGET_API_KEY" --skip-duplicate
+            dotnet nuget push "$pkg" --source https://api.nuget.org/v3/index.json --api-key "$NUGET_API_KEY"
           done
