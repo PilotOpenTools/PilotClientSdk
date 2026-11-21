@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.Remoting.Messaging;
+using System.Runtime.Remoting.Proxies;
 using System.Threading;
 using System.Threading.Tasks;
 using Ascon.Pilot.SDK;
@@ -32,6 +34,55 @@ namespace Pilot.ClientSdk.Tests
         {
             var codes = new[] { "1.10", "1.2", "1", "1.2.1", "" };
             Assert.Equal(new[] { "", "1", "1.2", "1.2.1", "1.10" }, codes.OrderBy(c => c, Text.CodeComparer));
+        }
+
+        [Fact]
+        public void Codes_sort_mixed_parts_consistently()
+        {
+            Assert.True(Text.CompareCodes("2", "10") < 0);
+            Assert.True(Text.CompareCodes("10", "15a") < 0);
+            Assert.True(Text.CompareCodes("2", "15a") < 0);
+            Assert.True(Text.CompareCodes("15a", "2") > 0);
+        }
+
+        [Fact]
+        public void Integer_attributes_check_range_after_truncation()
+        {
+            var values = new Dictionary<string, object>
+            {
+                ["decimalOverflow"] = decimal.MaxValue,
+                ["doubleOverflow"] = (double)long.MaxValue,
+                ["nan"] = double.NaN,
+                ["largest"] = (decimal)long.MaxValue + 0.5m,
+                ["fraction"] = -12.75d,
+            };
+            var obj = new SdkStub<IDataObject>(new Dictionary<string, object> { ["get_Attributes"] = values }).Object;
+
+            Assert.Null(obj.Int("decimalOverflow"));
+            Assert.Null(obj.Int("doubleOverflow"));
+            Assert.Null(obj.Int("nan"));
+            Assert.Equal(long.MaxValue, obj.Int("largest"));
+            Assert.Equal(-12L, obj.Int("fraction"));
+        }
+
+        [Theory]
+        [InlineData(DataState.Loaded, 1)]
+        [InlineData(DataState.NonExistent, 0)]
+        public async Task Loader_waits_for_final_state_after_cache_miss(DataState finalState, int expectedCount)
+        {
+            var id = Guid.NewGuid();
+            var source = new ManualSource<IDataObject>();
+            var repository = new SdkStub<IObjectsRepository>(new Dictionary<string, object> { ["SubscribeObjects"] = source }).Object;
+            IDataObject WithState(DataState state) => new SdkStub<IDataObject>(new Dictionary<string, object>
+                { ["get_Id"] = id, ["get_State"] = state }).Object;
+
+            var loaded = new Loader(repository).LoadAsync(new[] { id }, TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            source.Push(WithState(DataState.NoData));
+            Assert.False(loaded.IsCompleted);
+
+            source.Push(WithState(finalState));
+            Assert.Equal(expectedCount, (await loaded).Count);
+            Assert.True(source.Disposed);
         }
 
         [Fact]
@@ -143,6 +194,31 @@ namespace Pilot.ClientSdk.Tests
         }
 
         [Fact]
+        public async Task Subscription_surfaces_callback_error_and_disposes_subscription()
+        {
+            var source = new ManualSource<int>();
+            var expected = new InvalidOperationException("predicate failed");
+            var task = SdkSubscription.RunAsync<int, int>(source.Subscribe, _ => throw expected, () => 0,
+                TimeSpan.FromSeconds(5), CancellationToken.None, "test");
+
+            source.Push(1);
+
+            Assert.Same(expected, await Assert.ThrowsAsync<InvalidOperationException>(() => task));
+            Assert.True(source.Disposed);
+        }
+
+        [Fact]
+        public async Task Subscription_does_not_start_when_already_cancelled()
+        {
+            var subscribed = false;
+            var task = SdkSubscription.RunAsync<int, int>(_ => { subscribed = true; return null; },
+                _ => false, () => 0, TimeSpan.FromSeconds(5), new CancellationToken(true), "test");
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => task);
+            Assert.False(subscribed);
+        }
+
+        [Fact]
         public void Sync_wait_off_ui_thread()
         {
             var source = new ManualSource<int>();
@@ -176,7 +252,22 @@ namespace Pilot.ClientSdk.Tests
             Assert.Null(org.Parent(1));
         }
 
-        private sealed class ManualSource<T>
+        private sealed class SdkStub<T> : RealProxy where T : class
+        {
+            private readonly IReadOnlyDictionary<string, object> _responses;
+
+            public SdkStub(IReadOnlyDictionary<string, object> responses) : base(typeof(T)) => _responses = responses;
+
+            public T Object => (T)GetTransparentProxy();
+
+            public override IMessage Invoke(IMessage message)
+            {
+                var call = (IMethodCallMessage)message;
+                return new ReturnMessage(_responses[call.MethodName], null, 0, call.LogicalCallContext, call);
+            }
+        }
+
+        private sealed class ManualSource<T> : IObservable<T>
         {
             private IObserver<T> _observer;
             public bool Disposed { get; private set; }

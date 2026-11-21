@@ -108,20 +108,7 @@ namespace Pilot.ClientSdk.Pilot
             {
                 return "Значение не является настройками модулей: " + ex.GetBaseException().Message;
             }
-            return Validate(config);
-        }
-
-        private static string Validate(ModuleConfig config)
-        {
-            if (!string.IsNullOrWhiteSpace(config.StatsUrl) && !IsHttpUrl(config.StatsUrl))
-                return "Адрес сервиса статистики должен начинаться с http:// или https://.";
-            if (config.StatsEnabled && string.IsNullOrWhiteSpace(config.StatsUrl))
-                return "Статистика включена, но адрес сервиса не задан.";
-            if (config.FlushSeconds < 1 || config.FlushSeconds > 3600)
-                return "Интервал отправки - от 1 до 3600 секунд.";
-            if (config.StartupLockSeconds < 0 || config.StartupLockSeconds > 600)
-                return "Ожидание загрузки модулей - от 0 до 600 секунд.";
-            return null;
+            return config.ValidationError(requireStatsUrl: true);
         }
 
         private void Load()
@@ -198,7 +185,7 @@ namespace Pilot.ClientSdk.Pilot
                 TrayMenu = _trayMenu.IsChecked == true,
             };
 
-            var error = Validate(config);
+            var error = config.ValidationError(requireStatsUrl: true);
             if (error != null)
             {
                 ShowStatus(error + " Не сохранено.", Red);
@@ -238,7 +225,7 @@ namespace Pilot.ClientSdk.Pilot
         private async Task CheckUrlAsync(Button button)
         {
             var url = _statsUrl.Text.Trim();
-            if (!IsHttpUrl(url))
+            if (!ModuleConfig.IsHttpUrl(url))
             {
                 SetCheck("Укажите адрес вида http://сервер:5310/api/module-events.", Red);
                 return;
@@ -278,9 +265,6 @@ namespace Pilot.ClientSdk.Pilot
             _status.Text = text;
             _status.Foreground = brush;
         }
-
-        private static bool IsHttpUrl(string url) =>
-            Uri.TryCreate(url, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
 
         private static GroupBox Group(string header, params UIElement[] children)
         {

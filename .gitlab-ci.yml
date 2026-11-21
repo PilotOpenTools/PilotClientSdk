@@ -318,6 +318,14 @@ deploy_prod:
   extends: .deploy
   environment: { name: prod }
   resource_group: deploy-prod   # одна выкладка на контур одновременно
+  needs:
+    - job: check_version
+    - job: build_module
+    - job: check_libraries
+    - job: build_tests
+      artifacts: false
+    - job: test
+      artifacts: false
   rules:
     - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "master"
 
@@ -331,18 +339,18 @@ build_tests:
   script:
     - dotnet build tests/Pilot.ClientSdk.Tests -c Release -p:CopyToPilot=false -p:EnableWindowsTargeting=true
 
-# Запуск тестов - на Windows-раннере с тегом windows. Переменная CI/CD WINDOWS_RUNNER=true включает автоматический
-# запуск в каждом pipeline; без неё задание ручное (раннера может не быть) и pipeline на него не ждёт.
+# Для выкладки в прод нужен Windows-раннер. На остальных ветках WINDOWS_RUNNER=true включает автоматический запуск.
 test:
   stage: build
   needs: []
   tags: [windows]
   rules:
+    - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "master"
     - if: $WINDOWS_RUNNER == "true"
     - when: manual
       allow_failure: true
   script:
-    - dotnet test tests/Pilot.ClientSdk.Tests
+    - dotnet test Pilot.ClientSdk.sln -c Release -p:CopyToPilot=false
 
 # NuGet-пакет Pilot.ClientSdk (только для компиляции: ref/net48) / реестр пакетов этого проекта GitLab.
 # Версия пакета - X.Y.Z из <Version> csproj (check_version); NUGET_SUFFIX дописывает -dev.N / -rc.N, N - номер pipeline проекта.
