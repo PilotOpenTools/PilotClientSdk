@@ -32,6 +32,9 @@ namespace Pilot.ClientSdk.Infrastructure
             CancellationToken ct,
             string what)
         {
+            if (ct.IsCancellationRequested)
+                return Task.FromCanceled<TResult>(ct);
+
             var tcs = new TaskCompletionSource<TResult>(TaskCreationOptions.RunContinuationsAsynchronously);
             var sync = new object();
             IDisposable subscription = null;
@@ -42,15 +45,16 @@ namespace Pilot.ClientSdk.Infrastructure
                 if (Interlocked.Exchange(ref finished, 1) != 0)
                     return;
                 // Подписка снимается синхронно (на UI-потоке клиента), раньше, чем задача получает результат.
-                var sub = subscription;
                 try
                 {
+                    var sub = Interlocked.Exchange(ref subscription, null);
                     if (sub != null)
                         OnUiSync(sub.Dispose);
-                }
-                finally
-                {
                     complete();
+                }
+                catch (Exception ex)
+                {
+                    tcs.TrySetException(ex);
                 }
             }
 
@@ -58,8 +62,20 @@ namespace Pilot.ClientSdk.Infrastructure
                 item =>
                 {
                     bool done;
-                    lock (sync)
-                        done = onNext(item);
+                    try
+                    {
+                        lock (sync)
+                        {
+                            if (Volatile.Read(ref finished) != 0)
+                                return;
+                            done = onNext(item);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Finish(() => tcs.TrySetException(ex));
+                        return;
+                    }
                     if (done)
                         Finish(() => { lock (sync) tcs.TrySetResult(result()); });
                 },
@@ -83,11 +99,12 @@ namespace Pilot.ClientSdk.Infrastructure
             {
                 OnUiSync(() =>
                 {
-                    var sub = subscribe(observer);
-                    subscription = sub;
+                    if (Volatile.Read(ref finished) != 0)
+                        return;
+                    Interlocked.Exchange(ref subscription, subscribe(observer));
                     // Подписка могла закончиться синхронно, ещё до присвоения.
                     if (Volatile.Read(ref finished) != 0)
-                        sub.Dispose();
+                        Interlocked.Exchange(ref subscription, null)?.Dispose();
                 });
             }
             catch (Exception ex)

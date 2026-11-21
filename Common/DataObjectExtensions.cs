@@ -75,8 +75,10 @@ namespace Pilot.ClientSdk
             {
                 case int i: return i;
                 case long l: return l;
-                case double d: return (long)d;
-                case decimal m: return (long)m;
+                case double d when d >= long.MinValue && d < (double)long.MaxValue: return (long)d;
+                case decimal m:
+                    var whole = decimal.Truncate(m);
+                    return whole >= long.MinValue && whole <= long.MaxValue ? (long)whole : (long?)null;
                 case string s when long.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed): return parsed;
                 default: return null;
             }

@@ -20,10 +20,11 @@ namespace Pilot.ClientSdk
     /// <summary>Запуск одного стартового класса (<see cref="IModule"/> / <see cref="IModuleAsync"/>).</summary>
     public sealed class ModuleStartupReport
     {
-        internal ModuleStartupReport(string module, string part)
+        internal ModuleStartupReport(string module, string part, Assembly assembly = null)
         {
             Module = module;
             Part = part;
+            Assembly = assembly;
         }
 
         /// <summary>Имя сборки модуля (087OpenStoradge.ext2).</summary>
@@ -31,6 +32,8 @@ namespace Pilot.ClientSdk
 
         /// <summary>Полное имя стартового класса.</summary>
         public string Part { get; }
+
+        internal Assembly Assembly { get; }
 
         public ModuleStartupStatus Status { get; internal set; } = ModuleStartupStatus.Running;
 
@@ -120,10 +123,10 @@ namespace Pilot.ClientSdk
 
         private static ModuleStartupReport Begin(Type part)
         {
-            var report = new ModuleStartupReport(part.Assembly.GetName().Name, part.FullName);
+            var report = new ModuleStartupReport(part.Assembly.GetName().Name, part.FullName, part.Assembly);
             lock (Sync)
             {
-                All.RemoveAll(r => r.Part == report.Part && r.Module == report.Module);   // повторный запуск того же класса
+                All.RemoveAll(r => r.Part == report.Part && r.Assembly == report.Assembly);
                 All.Add(report);
             }
             Raise(report);
