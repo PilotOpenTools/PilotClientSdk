@@ -84,6 +84,9 @@ namespace Pilot.ClientSdk.Tests
                 ModuleConfig.ApplyCommon("{ не json");                     // битое значение не сбрасывает действующее
                 Assert.Equal("http://pilot-settings/api/module-events", ModuleConfig.Current.StatsUrl);
 
+                ModuleConfig.ApplyCommon("{\"statsUrl\":\"http://invalid\",\"flushSeconds\":2147483647}");
+                Assert.Equal("http://pilot-settings/api/module-events", ModuleConfig.Current.StatsUrl);
+
                 ModuleConfig.ApplyCommon("");
                 Assert.Equal("http://file/api/module-events", ModuleConfig.Current.StatsUrl);
                 Assert.Equal(2, changes.Count);
@@ -96,11 +99,13 @@ namespace Pilot.ClientSdk.Tests
 
         [Theory]
         [InlineData("", true)]
+        [InlineData("null", false)]
         [InlineData("{\"statsUrl\":\"http://h:5310/api/module-events\"}", true)]
         [InlineData("{\"statsEnabled\":false}", true)]
         [InlineData("{\"statsUrl\":\"h:5310\"}", false)]
         [InlineData("{\"statsEnabled\":true}", false)]
         [InlineData("{\"statsUrl\":\"http://h\",\"flushSeconds\":0}", false)]
+        [InlineData("{\"statsUrl\":\"http://h\",\"flushSeconds\":2147483647}", false)]
         [InlineData("{\"statsUrl\":\"http://h\",\"startupLockSeconds\":-1}", false)]
         [InlineData("не json", false)]
         public void Settings_value_validation(string value, bool valid)
@@ -112,7 +117,7 @@ namespace Pilot.ClientSdk.Tests
         public async Task Sender_switches_url_without_losing_queue()
         {
             var handler = new UrlHandler();
-            var sender = new StatsSender();
+            using var sender = new StatsSender();
             sender.Start(new ModuleConfig { StatsUrl = "http://old/api/module-events", FlushSeconds = 3600 }, null, handler);
             var stats = new ModuleStats(new ModuleIdentity("m.ext2", null, "1.0.0.0"), sender);
 
@@ -127,6 +132,21 @@ namespace Pilot.ClientSdk.Tests
             await sender.FlushAsync();
             Assert.Single(handler.Urls);
             Assert.Equal(0, sender.Queued);
+        }
+
+        [Fact]
+        public async Task Sender_keeps_working_configuration_when_update_is_rejected()
+        {
+            using var handler = new UrlHandler();
+            using var sender = new StatsSender();
+            sender.Start(new ModuleConfig { StatsUrl = "http://old/api/module-events", FlushSeconds = 3600 }, null, handler);
+
+            Assert.Throws<ArgumentException>(() => sender.Configure(new ModuleConfig
+                { StatsUrl = "http://new/api/module-events", FlushSeconds = int.MaxValue }));
+            sender.Enqueue(new ModuleEvent());
+
+            Assert.True(await sender.FlushAsync());
+            Assert.Equal("http://old/api/module-events", Assert.Single(handler.Urls));
         }
 
         [Fact]

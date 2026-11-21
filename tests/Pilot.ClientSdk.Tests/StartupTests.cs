@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Pilot.ClientSdk;
@@ -136,6 +137,56 @@ namespace Pilot.ClientSdk.Tests
             Assert.Equal(2, rows.Count);
         }
 
+        [Theory]
+        [InlineData(@"C:\Development\Storadge", "1.0.0.0", "другая версия")]
+        [InlineData(@"C:\Development\Storadge", "2.0.0.0", "не загружен")]
+        [InlineData(@"D:\shadow", "1.0.0.0", "другая версия")]
+        public void Loaded_name_does_not_hide_a_wrong_or_local_version(string directory, string version, string status)
+        {
+            var expected = new[] { new ExpectedModule(Guid.NewGuid(), "Storadge", "2.0.0", FileA) };
+            var loaded = new[] { new LoadedModule("087OpenStoradge.ext2", "Storadge", version, directory, true, true) };
+            var rows = Check(expected, loaded, new[] { Report("087OpenStoradge.ext2") }, deadline: true, downloaded: FileA);
+
+            var serverRow = rows.Single(r => r.Key == FileA.ToString());
+            Assert.Equal(RowState.Error, serverRow.State);
+            Assert.Equal(status, serverRow.Status);
+            Assert.Contains(rows, r => r.Version.EndsWith(" (локально)", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public void Dll_scan_sees_new_files_after_an_initial_empty_result()
+        {
+            var folder = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString())).FullName;
+            var file = Path.Combine(folder, "Report.ext2.dll");
+            try
+            {
+                var sources = new ModuleSources(null);
+                Assert.Empty(sources.DllNamesIn(folder));
+                File.WriteAllText(file, "");
+                Assert.Equal("Report.ext2", Assert.Single(sources.DllNamesIn(folder)));
+            }
+            finally
+            {
+                File.Delete(file);
+                Directory.Delete(folder);
+            }
+        }
+
+        [Theory]
+        [InlineData((int)RowState.Ok, true, false)]
+        [InlineData((int)RowState.Warning, true, false)]
+        [InlineData((int)RowState.Running, true, true)]
+        [InlineData((int)RowState.Waiting, true, true)]
+        [InlineData((int)RowState.Error, true, true)]
+        [InlineData((int)RowState.Ok, false, true)]
+        public void Startup_result_needs_the_server_list_and_finished_modules(int rowState, bool hasServerList, bool hasProblems)
+        {
+            var row = new RowResult { State = (RowState)rowState };
+            var state = new StartupState(new[] { row }, null, row.IsDone, hasServerList);
+
+            Assert.Equal(hasProblems, state.HasProblems);
+        }
+
         [Fact]
         public void module_statuses_follow_the_contract()
         {
@@ -162,7 +213,7 @@ namespace Pilot.ClientSdk.Tests
             var expected = new[] { new ExpectedModule(Guid.NewGuid(), "Модуль А", "1.0.0", FileA) };
             var loaded = new[]
             {
-                new LoadedModule("087OpenStoradge.ext2", "Открыть Storadge", "1.0.1.0", null, true, true),
+                new LoadedModule("087OpenStoradge.ext2", "Открыть Storadge", "1.0.0.0", null, true, true),
                 new LoadedModule("Dev.ext2", "Модуль из Development", "2.0.0.0", @"C:\Development\Dev.ext2", true, false),
                 new LoadedModule("Foreign.ext2", "Чужой", "1.0.0.0", null, false, false),
             };

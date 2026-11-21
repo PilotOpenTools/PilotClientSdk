@@ -60,9 +60,12 @@ namespace Pilot.ClientSdk
             var partsB = b.Split('.', '-', ' ');
             for (var i = 0; i < Math.Min(partsA.Length, partsB.Length); i++)
             {
-                var result = long.TryParse(partsA[i], out var na) && long.TryParse(partsB[i], out var nb)
-                    ? na.CompareTo(nb)
-                    : string.Compare(partsA[i], partsB[i], StringComparison.CurrentCultureIgnoreCase);
+                var numericA = long.TryParse(partsA[i], out var na);
+                var numericB = long.TryParse(partsB[i], out var nb);
+                if (numericA != numericB)
+                    return numericA ? -1 : 1;
+                var result = numericA ? na.CompareTo(nb) :
+                    string.Compare(partsA[i], partsB[i], StringComparison.CurrentCultureIgnoreCase);
                 if (result != 0)
                     return result;
             }

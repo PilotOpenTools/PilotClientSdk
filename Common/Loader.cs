@@ -160,6 +160,6 @@ namespace Pilot.ClientSdk
         }
 
         private static bool IsFinal(DataState state) =>
-            state == DataState.Loaded || state == DataState.NoData || state == DataState.NonExistent;
+            state == DataState.Loaded || state == DataState.NonExistent;
     }
 }

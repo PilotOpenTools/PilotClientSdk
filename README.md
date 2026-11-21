@@ -52,6 +52,11 @@ dotnet add package PilotClientSdk
 ## Быстрый старт
 
 ```csharp
+using System;
+using System.ComponentModel.Composition;
+using System.Windows;
+using Ascon.Pilot.SDK;
+using Ascon.Pilot.SDK.Menu;
 using Pilot.ClientSdk;
 using Pilot.ClientSdk.Telemetry;
 
@@ -72,12 +77,28 @@ public class StartPoint : IMenu<ObjectsViewContext>, IModule
     public void Build(IMenuBuilder builder, ObjectsViewContext context) =>
         builder.AddItem("Count", 0).WithHeader("Посчитать документы");
 
-    public async void OnMenuItemClick(string name, ObjectsViewContext context) =>
-        await Stats.RunAsync("Посчитать документы", async op =>
+    public async void OnMenuItemClick(string name, ObjectsViewContext context)
+    {
+        if (name != "Count")
+            return;
+
+        try
         {
-            var docs = await PilotApi.Searcher.ByTypeAsync("pir_doc");
-            op.Items = docs.Count;        // сколько обработано - в Grafana
-        });
+            await Stats.RunAsync("Посчитать документы", async op =>
+            {
+                var docs = await PilotApi.Searcher.ByTypeAsync("pir_doc");
+                op.Items = docs.Count;
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            MessageBox.Show("Подсчёт отменён.");
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show("Не удалось посчитать документы. " + ex.Message);
+        }
+    }
 }
 ```
 

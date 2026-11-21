@@ -20,7 +20,6 @@ namespace Pilot.ClientSdk.Startup
         private static readonly TimeSpan LoadTimeout = TimeSpan.FromSeconds(10);
 
         private readonly ConcurrentDictionary<string, bool> _contract = new ConcurrentDictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
-        private readonly ConcurrentDictionary<string, IReadOnlyCollection<string>> _dllNames = new ConcurrentDictionary<string, IReadOnlyCollection<string>>(StringComparer.OrdinalIgnoreCase);
         private readonly IObjectsRepository _repository;
         private IReadOnlyList<string> _pluginRoots;
 
@@ -79,18 +78,18 @@ namespace Pilot.ClientSdk.Startup
             return null;
         }
 
-        public IReadOnlyCollection<string> DllNamesIn(string folder) =>
-            _dllNames.GetOrAdd(folder, f =>
+        public IReadOnlyCollection<string> DllNamesIn(string folder)
+        {
+            try
             {
-                try
-                {
-                    return Directory.GetFiles(f, "*.ext2.dll").Select(Path.GetFileNameWithoutExtension).ToList();
-                }
-                catch
-                {
-                    return Array.Empty<string>();
-                }
-            });
+                return Directory.GetFiles(folder, "*.ext2.dll").Select(Path.GetFileNameWithoutExtension).ToList();
+            }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+            {
+                ModuleLog.Warn("Проверка модулей: не удалось прочитать папку " + folder, ex);
+                return Array.Empty<string>();
+            }
+        }
 
         /// <summary>Загруженные в клиент сборки *.ext2 (модули Pilot).</summary>
         public IReadOnlyList<LoadedModule> Loaded()
@@ -103,11 +102,11 @@ namespace Pilot.ClientSdk.Startup
                     if (assembly.IsDynamic)
                         continue;
                     var name = assembly.GetName().Name ?? "";
-                    if (!name.EndsWith(".ext2", StringComparison.OrdinalIgnoreCase) || result.Any(r => r.Name == name))
+                    if (!name.EndsWith(".ext2", StringComparison.OrdinalIgnoreCase))
                         continue;
                     var id = ModuleIdentity.Of(assembly);
                     result.Add(new LoadedModule(name, id.Title, id.Version, DirectoryOf(assembly),
-                        ModuleStartup.IsModule(assembly), ImplementsContract(assembly)));
+                        ModuleStartup.IsModule(assembly), ImplementsContract(assembly), assembly));
                 }
                 catch
                 {
