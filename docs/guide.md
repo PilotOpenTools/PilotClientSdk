@@ -49,7 +49,7 @@
 
 ## 1. Быстрый старт
 
-Подключение - NuGet-пакет `Pilot.ClientSdk` из [nuget.org](https://www.nuget.org/packages/Pilot.ClientSdk) (с 2.1.2; `nuget.config` ниже тогда не нужен) или из реестра пакетов GitLab (подробно - [4.1](#41-nuget-пакет); первый раз на машине - подключить источник GitLab и войти, [4.2](#42-источник-gitlab-на-своей-машине)). Сборка в пакете лежит в `ref/net48`: она нужна только для компиляции и в `bin` и zip модуля не копируется. В клиенте её уже загрузил модуль `113Pilot.ClientSdk.ext2`, вторая копия дала бы конфликт типов.
+Подключение - NuGet-пакет `Pilot.ClientSdk` из [nuget.org](https://www.nuget.org/packages/Pilot.ClientSdk) (с 2.1.3; `nuget.config` ниже тогда не нужен) или из реестра пакетов GitLab (подробно - [4.1](#41-nuget-пакет); первый раз на машине - подключить источник GitLab и войти, [4.2](#42-источник-gitlab-на-своей-машине)). Сборка в пакете лежит в `ref/net48`: она нужна только для компиляции и в `bin` и zip модуля не копируется. В клиенте её уже загрузил модуль `113Pilot.ClientSdk.ext2`, вторая копия дала бы конфликт типов.
 
 `nuget.config` рядом с `.csproj` модуля (образец - в `Test-module`; адрес GitLab `gitlab.example.local` и `PROJECT_ID` замените на свои, см. [4.1](#41-nuget-пакет)):
 
@@ -70,7 +70,7 @@
 `.csproj` модуля:
 
 ```xml
-<PackageReference Include="Pilot.ClientSdk" Version="2.1.2" />
+<PackageReference Include="Pilot.ClientSdk" Version="2.1.3" />
 ```
 
 Копию dll в папке `lib/` модуля больше не храните.

@@ -41,7 +41,7 @@ dotnet add package Pilot.ClientSdk
 ```
 
 ```xml
-<PackageReference Include="Pilot.ClientSdk" Version="2.1.2" />
+<PackageReference Include="Pilot.ClientSdk" Version="2.1.3" />
 ```
 
 Тот же пакет лежит в [GitHub Packages](https://github.com/PilotOpenTools/PilotClientSdk/pkgs/nuget/Pilot.ClientSdk) (нужен вход с токеном `read:packages`) и файлом в релизе - для закрытого контура его кладут в реестр пакетов своего GitLab.
