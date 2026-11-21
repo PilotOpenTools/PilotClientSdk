@@ -109,7 +109,7 @@ Debug-сборка копирует модуль в `%LocalAppData%\ASCON\Pilot-
 
 3. Workflow [release.yml](.github/workflows/release.yml) сверит тег с версией, соберёт и проверит решение, опубликует релиз с zip модуля, пакетом и контрольными суммами и отправит пакет в GitHub Packages и nuget.org. Описание релиза берётся из раздела версии в `CHANGELOG.md`.
 
-Публикация в nuget.org идёт через Trusted Publishing, ключ API не хранится. Один раз: на nuget.org в Trusted Publishing добавьте политику для репозитория `PilotOpenTools/PilotClientSdk` и файла `release.yml`, а в репозитории задайте переменную `NUGET_USER` (Settings / Secrets and variables / Actions / Variables) - имя пользователя nuget.org. Без переменной шаг пропускается с предупреждением. Версия в nuget.org необратима: её можно только скрыть.
+Публикация в nuget.org идёт через [Trusted Publishing](https://learn.microsoft.com/nuget/nuget-org/trusted-publishing): задание получает от GitHub токен OIDC и меняет его в nuget.org на ключ API, который живёт час. Постоянного ключа нет ни в репозитории, ни в секретах, поэтому открытый репозиторий ничем не рискует. Политика на nuget.org (профиль `tsaregorlionheart`, раздел Trusted Publishing): владелец `PilotOpenTools`, репозиторий `PilotClientSdk`, файл `release.yml`. Версия в nuget.org необратима: её можно только скрыть.
 
 В GitLab стенда PilotProAdmin модуль ведётся по схеме веток `dev` / `release/*` / `main` с выкладкой на тест, стейдж и прод: этим занимается [.gitlab-ci.yml](.gitlab-ci.yml), подробно в [руководстве](docs/guide.md#4-сборка-выпуск-cicd).
 

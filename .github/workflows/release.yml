@@ -2,9 +2,16 @@ name: Release
 
 # Тег vX.Y.Z: проверка версии, сборка, тесты и GitHub Release с zip модуля, NuGet-пакетом и контрольными суммами.
 # Описание релиза - раздел версии из CHANGELOG.md; без него workflow падает.
+# Ручной запуск (Actions / Release / Run workflow) с тегом уже выпущенной версии только отправляет её пакет в nuget.org:
+# например, если политика Trusted Publishing появилась после релиза.
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Тег выпущенного релиза, пакет которого отправить в nuget.org (например v2.1.2)'
+        required: true
 
 permissions:
   contents: write
@@ -17,6 +24,7 @@ concurrency:
 
 jobs:
   release:
+    if: github.event_name == 'push'
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
@@ -103,18 +111,16 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "dotnet nuget push $($pkg.Name) в GitHub Packages завершился с кодом $LASTEXITCODE" }
           }
 
-      # Политика Trusted Publishing на nuget.org привязана к репозиторию PilotOpenTools/PilotClientSdk и файлу release.yml;
-      # имя пользователя nuget.org - переменная репозитория NUGET_USER (Settings / Secrets and variables / Actions / Variables).
-      # Публикация необратима: версию можно только скрыть.
+      # Trusted Publishing nuget.org: GitHub выдаёт заданию токен OIDC, nuget.org меняет его на ключ API на 1 час.
+      # Постоянного ключа нет ни в репозитории, ни в секретах. Политика на nuget.org (профиль tsaregorlionheart):
+      # владелец PilotOpenTools, репозиторий PilotClientSdk, файл release.yml. Публикация необратима: версию можно только скрыть.
       - name: NuGet login
         id: nuget-login
-        if: vars.NUGET_USER != ''
         uses: NuGet/login@v1
         with:
-          user: ${{ vars.NUGET_USER }}
+          user: tsaregorlionheart
 
       - name: Push to nuget.org
-        if: vars.NUGET_USER != ''
         shell: pwsh
         env:
           NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
@@ -124,6 +130,32 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "dotnet nuget push $($pkg.Name) в nuget.org завершился с кодом $LASTEXITCODE" }
           }
 
-      - name: nuget.org not configured
-        if: vars.NUGET_USER == ''
-        run: echo "::warning::Пакет не отправлен в nuget.org - задайте переменную репозитория NUGET_USER и политику Trusted Publishing на nuget.org (README, «Выпуск»)."
+  nuget:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Package from GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Тег должен быть вида vX.Y.Z: $TAG"; exit 1; }
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern 'Pilot.ClientSdk.*.nupkg' --pattern SHA256SUMS.txt --dir artifacts
+          cd artifacts
+          sha256sum --check --ignore-missing SHA256SUMS.txt
+          ls -la
+
+      - name: NuGet login
+        id: nuget-login
+        uses: NuGet/login@v1
+        with:
+          user: tsaregorlionheart
+
+      - name: Push to nuget.org
+        env:
+          NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
+        run: |
+          for pkg in artifacts/*.nupkg; do
+            dotnet nuget push "$pkg" --source https://api.nuget.org/v3/index.json --api-key "$NUGET_API_KEY" --skip-duplicate
+          done
