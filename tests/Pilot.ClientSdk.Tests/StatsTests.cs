@@ -171,11 +171,21 @@ namespace Pilot.ClientSdk.Tests
                 stats.Use("a" + i);           // до старта - копятся в очереди
             sender.Start(new ModuleConfig { StatsUrl = "http://collector/api/module-events", FlushSeconds = 3600 }, null, handler);
 
-            Assert.False(await sender.FlushAsync());
+            Assert.Equal(FlushResult.Failed, await sender.FlushAsync());
 
             // Первая пачка потеряна (503), остаток ждёт следующего тика, а не долбит недоступный сервис.
             Assert.Single(handler.Bodies);
             Assert.Equal(StatsSender.BatchSize + 50, sender.Queued);
+        }
+
+        [Fact]
+        public async Task Flush_with_empty_queue_does_not_attempt_a_request()
+        {
+            using var handler = new CaptureHandler();
+            using var sender = Started(handler);
+
+            Assert.Equal(FlushResult.NotAttempted, await sender.FlushAsync());
+            Assert.Empty(handler.Bodies);
         }
 
         [Fact]
@@ -203,7 +213,7 @@ namespace Pilot.ClientSdk.Tests
                 handler.FirstResponse.TrySetResult(HttpStatusCode.ServiceUnavailable);
             }
 
-            Assert.False(await flushing);
+            Assert.Equal(FlushResult.Failed, await flushing);
             await stopping;
             Assert.Equal(0, sender.Queued);
             Assert.Equal(2, handler.Bodies.Count);
@@ -217,7 +227,7 @@ namespace Pilot.ClientSdk.Tests
             sender.Start(new ModuleConfig { StatsUrl = url, FlushSeconds = 3600 },
                 new ClientEnvironment { Login = "it-test", Person = "Интеграционный тест", Server = "http://localhost:5547/it" });
             new ModuleStats(new ModuleIdentity("999ItTest.ext2", "Интеграционный тест Pilot.ClientSdk", "1.0.0.0"), sender).Use("it");
-            Assert.True(await sender.FlushAsync(), "Коллектор должен принять отправленную пачку (HTTP 2xx).");
+            Assert.Equal(FlushResult.Accepted, await sender.FlushAsync());
             Assert.Equal(0, sender.Queued);
         }
 

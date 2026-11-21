@@ -136,7 +136,7 @@ namespace Pilot.ClientSdk.Startup
             }
             catch (Exception ex)
             {
-                _state = new StartupState(Array.Empty<RowResult>(), "Ошибка проверки модулей: " + ex.Message, true, false);
+                _state = new StartupState(Array.Empty<RowResult>(), null, true, false, "Ошибка проверки модулей: " + ex.Message);
             }
 
             Sync(_state.Rows);
@@ -148,20 +148,25 @@ namespace Pilot.ClientSdk.Startup
             _progress.Maximum = Math.Max(total, 1);
             _progress.Value = _state.IsDone ? _progress.Maximum : done;
             var finished = _state.IsDone || DeadlinePassed;
-            _progress.Foreground = errors > 0 ? Red : !finished ? Blue : _state.HasProblems ? Orange : Green;
+            _progress.Foreground = errors > 0 || _state.CheckError != null ? Red : !finished ? Blue :
+                _state.HasProblems || !_state.HasServerList ? Orange : Green;
 
             if (!finished)
                 _header.Text = $"Загрузка модулей… {done} из {total}";
             else if (errors > 0)
                 _header.Text = $"Модули загружены с ошибками: {errors} из {total}";
+            else if (_state.CheckError != null)
+                _header.Text = "Проверка загрузки завершилась с ошибкой";
             else if (_state.HasProblems)
                 _header.Text = "Проверка загрузки модулей не завершена";
+            else if (!_state.HasServerList)
+                _header.Text = $"Проверены загруженные модули: {total}";
             else if (warnings > 0)
                 _header.Text = $"Модули загружены: {total}, замечаний: {warnings}";
             else
                 _header.Text = $"Все модули загружены: {total}";
 
-            _note.Text = _state.Note ?? "";
+            _note.Text = _state.CheckError ?? _state.Note ?? "";
             _note.Visibility = string.IsNullOrEmpty(_note.Text) ? Visibility.Collapsed : Visibility.Visible;
 
             var left = (int)Math.Ceiling((_lock - Elapsed).TotalSeconds);
@@ -313,12 +318,13 @@ namespace Pilot.ClientSdk.Startup
     /// <summary>Результат одного пересчёта для окна.</summary>
     internal sealed class StartupState
     {
-        public StartupState(IReadOnlyList<RowResult> rows, string note, bool isDone, bool hasServerList)
+        public StartupState(IReadOnlyList<RowResult> rows, string note, bool isDone, bool hasServerList, string checkError = null)
         {
             Rows = rows;
             Note = note;
             IsDone = isDone;
             HasServerList = hasServerList;
+            CheckError = checkError;
             ProblemRows = rows.Where(r => !r.IsDone || r.State == RowState.Error).ToList();
         }
 
@@ -331,7 +337,8 @@ namespace Pilot.ClientSdk.Startup
         public bool IsDone { get; }
 
         public bool HasServerList { get; }
+        public string CheckError { get; }
         public IReadOnlyList<RowResult> ProblemRows { get; }
-        public bool HasProblems => !HasServerList || ProblemRows.Count > 0;
+        public bool HasProblems => CheckError != null || ProblemRows.Count > 0;
     }
 }

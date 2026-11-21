@@ -138,10 +138,10 @@ namespace Pilot.ClientSdk.Tests
         }
 
         [Theory]
-        [InlineData(@"C:\Development\Storadge", "1.0.0.0", "другая версия")]
-        [InlineData(@"C:\Development\Storadge", "2.0.0.0", "не загружен")]
-        [InlineData(@"D:\shadow", "1.0.0.0", "другая версия")]
-        public void Loaded_name_does_not_hide_a_wrong_or_local_version(string directory, string version, string status)
+        [InlineData(@"C:\Development\Storadge", "1.0.0.0", "другая версия", true)]
+        [InlineData(@"C:\Development\Storadge", "2.0.0.0", "не загружен", true)]
+        [InlineData(@"D:\shadow", "1.0.0.0", "другая версия", false)]
+        public void Loaded_name_does_not_hide_a_wrong_or_local_version(string directory, string version, string status, bool showLocal)
         {
             var expected = new[] { new ExpectedModule(Guid.NewGuid(), "Storadge", "2.0.0", FileA) };
             var loaded = new[] { new LoadedModule("087OpenStoradge.ext2", "Storadge", version, directory, true, true) };
@@ -150,7 +150,23 @@ namespace Pilot.ClientSdk.Tests
             var serverRow = rows.Single(r => r.Key == FileA.ToString());
             Assert.Equal(RowState.Error, serverRow.State);
             Assert.Equal(status, serverRow.Status);
-            Assert.Contains(rows, r => r.Version.EndsWith(" (локально)", StringComparison.Ordinal));
+            Assert.Equal(showLocal ? 2 : 1, rows.Count);
+            Assert.Equal(showLocal, rows.Any(r => r.Version.EndsWith(" (локально)", StringComparison.Ordinal)));
+        }
+
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public void Third_party_modules_are_checked_for_loading_without_comparing_versions(bool exactFolder)
+        {
+            var expected = new[] { new ExpectedModule(Guid.NewGuid(), "Third-party module", "2.0.0", FileA) };
+            var directory = exactFolder ? @"C:\Plugins\" + FileA : @"D:\shadow";
+            var loaded = new[] { new LoadedModule("087OpenStoradge.ext2", "Third-party module", "1.0.0.0", directory, false, false) };
+            var row = Assert.Single(Check(expected, loaded, deadline: true, downloaded: FileA));
+
+            Assert.Equal(RowState.Ok, row.State);
+            Assert.Equal("загружен", row.Status);
+            Assert.Equal("1.0.0", row.Version);
         }
 
         [Fact]
@@ -178,13 +194,22 @@ namespace Pilot.ClientSdk.Tests
         [InlineData((int)RowState.Running, true, true)]
         [InlineData((int)RowState.Waiting, true, true)]
         [InlineData((int)RowState.Error, true, true)]
-        [InlineData((int)RowState.Ok, false, true)]
-        public void Startup_result_needs_the_server_list_and_finished_modules(int rowState, bool hasServerList, bool hasProblems)
+        [InlineData((int)RowState.Ok, false, false)]
+        [InlineData((int)RowState.Running, false, true)]
+        public void Startup_result_uses_actual_module_problems_regardless_of_server_list(int rowState, bool hasServerList, bool hasProblems)
         {
             var row = new RowResult { State = (RowState)rowState };
             var state = new StartupState(new[] { row }, null, row.IsDone, hasServerList);
 
             Assert.Equal(hasProblems, state.HasProblems);
+        }
+
+        [Fact]
+        public void Startup_result_distinguishes_check_failure_from_missing_server_list()
+        {
+            var state = new StartupState(Array.Empty<RowResult>(), null, true, false, "Ошибка проверки");
+
+            Assert.True(state.HasProblems);
         }
 
         [Fact]
