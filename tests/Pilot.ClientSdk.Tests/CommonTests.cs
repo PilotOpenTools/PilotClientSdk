@@ -68,6 +68,7 @@ namespace Pilot.ClientSdk.Tests
         [Theory]
         [InlineData(DataState.Loaded, 1)]
         [InlineData(DataState.NonExistent, 0)]
+        [InlineData(DataState.NoData, 0)]
         public async Task Loader_waits_for_final_state_after_cache_miss(DataState finalState, int expectedCount)
         {
             var id = Guid.NewGuid();
@@ -76,11 +77,12 @@ namespace Pilot.ClientSdk.Tests
             IDataObject WithState(DataState state) => new SdkStub<IDataObject>(new Dictionary<string, object>
                 { ["get_Id"] = id, ["get_State"] = state }).Object;
 
-            var loaded = new Loader(repository).LoadAsync(new[] { id }, TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            var loaded = new Loader(repository).LoadAsync(new[] { id }, TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
             source.Push(WithState(DataState.NoData));
             Assert.False(loaded.IsCompleted);
 
-            source.Push(WithState(finalState));
+            if (finalState != DataState.NoData)
+                source.Push(WithState(finalState));
             Assert.Equal(expectedCount, (await loaded).Count);
             Assert.True(source.Disposed);
         }

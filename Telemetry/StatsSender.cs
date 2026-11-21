@@ -10,6 +10,13 @@ using Pilot.ClientSdk.Infrastructure;
 
 namespace Pilot.ClientSdk.Telemetry
 {
+    internal enum FlushResult
+    {
+        NotAttempted,
+        Accepted,
+        Failed,
+    }
+
     /// <summary>
     /// Отправка событий в сервис сбора (report-metrics-collector, POST /api/module-events).
     /// События копятся в памяти и уходят пачкой раз в flushSeconds (или сразу, если набралось <see cref="BatchSize"/>)
@@ -46,8 +53,6 @@ namespace Pilot.ClientSdk.Telemetry
 
         public void Start(ModuleConfig config, ClientEnvironment env, HttpMessageHandler handler = null)
         {
-            if (config == null)
-                throw new ArgumentNullException(nameof(config));
             _env = env ?? new ClientEnvironment();
             _handler = handler;
             Configure(config);
@@ -58,14 +63,15 @@ namespace Pilot.ClientSdk.Telemetry
         /// Применить новые настройки (пришли общие настройки Pilot): адрес, ключ, период отправки.
         /// Накопленные события не теряются, если статистика осталась включённой.
         /// </summary>
-        public void Configure(ModuleConfig config)
+        public void Configure(ModuleConfig config = null)
         {
-            if (config == null)
-                return;
             lock (_configLock)
             {
                 if (_stopped)
                     return;
+
+                // Отложенное уведомление не должно вернуть отправитель к предыдущим настройкам.
+                config = config ?? ModuleConfig.Current;
                 var validationError = config.ValidationError();
                 if (validationError != null)
                     throw new ArgumentException(validationError, nameof(config));
@@ -133,26 +139,25 @@ namespace Pilot.ClientSdk.Telemetry
                 Task.Run(FlushAsync);
         }
 
-        /// <summary>Отправить накопленное. True, если сервис принял хотя бы одну пачку и очередь полностью отправлена.</summary>
-        public Task<bool> FlushAsync() => FlushAsync(waitForTurn: false, CancellationToken.None);
+        /// <summary>Отправить накопленное и вернуть исход отправленных пачек.</summary>
+        public Task<FlushResult> FlushAsync() => FlushAsync(waitForTurn: false, CancellationToken.None);
 
-        private async Task<bool> FlushAsync(bool waitForTurn, CancellationToken ct)
+        private async Task<FlushResult> FlushAsync(bool waitForTurn, CancellationToken ct)
         {
             if (_config?.StatsActive != true || (!waitForTurn && _stopped))
-                return false;
+                return FlushResult.NotAttempted;
             if (!await _flushLock.WaitAsync(waitForTurn ? Timeout.Infinite : 0, ct).ConfigureAwait(false))
-                return false;
+                return FlushResult.NotAttempted;
             try
             {
                 if (!waitForTurn && _stopped)
-                    return false;
+                    return FlushResult.NotAttempted;
 
                 var dropped = Interlocked.Exchange(ref _dropped, 0);
                 if (dropped > 0)
                     ModuleLog.Warn($"Статистика: очередь переполнена, отброшено событий - {dropped}");
 
-                var sentAny = false;
-                var allAccepted = true;
+                var result = FlushResult.NotAttempted;
                 while ((waitForTurn || !_stopped) && !ct.IsCancellationRequested && !_queue.IsEmpty)
                 {
                     var batch = new List<ModuleEvent>(BatchSize);
@@ -160,13 +165,15 @@ namespace Pilot.ClientSdk.Telemetry
                         batch.Add(e);
                     if (batch.Count == 0)
                         break;
-                    sentAny = true;
                     var (accepted, sendNext) = await SendAsync(batch, ct).ConfigureAwait(false);
-                    allAccepted &= accepted;
+                    if (!accepted)
+                        result = FlushResult.Failed;
+                    else if (result == FlushResult.NotAttempted)
+                        result = FlushResult.Accepted;
                     if (!sendNext)
                         break; // сервис недоступен - не долбим его остатком очереди
                 }
-                return sentAny && allAccepted && _queue.IsEmpty;
+                return result;
             }
             finally
             {

@@ -135,6 +135,8 @@ Debug-сборка копирует модуль в `%LocalAppData%\ASCON\Pilot-
 
 В GitLab стенда PilotProAdmin модуль ведётся по схеме веток `dev` / `release/*` / `main` с выкладкой на тест, стейдж и прод: этим занимается [.gitlab-ci.yml](.gitlab-ci.yml), подробно в [руководстве](docs/guide.md#4-сборка-выпуск-cicd).
 
+Для выкладки в прод и публикации `nuget_release` нужен доступный GitLab Runner с тегом `windows`. Пока такой раннер не возьмёт обязательное задание `test`, оба задания будут ждать.
+
 ## Участие
 
 Правила участия: [CONTRIBUTING.md](https://github.com/PilotOpenTools/.github/blob/main/CONTRIBUTING.md). Кодекс поведения: [CODE_OF_CONDUCT.md](https://github.com/PilotOpenTools/.github/blob/main/CODE_OF_CONDUCT.md).

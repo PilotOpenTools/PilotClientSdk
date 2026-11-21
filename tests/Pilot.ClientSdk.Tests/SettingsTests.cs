@@ -47,6 +47,73 @@ namespace Pilot.ClientSdk.Tests
         }
 
         [Fact]
+        public async Task Settings_notifications_publish_current_before_running_handlers_outside_lock()
+        {
+            ModuleConfig.Reset(new ModuleConfig { StatsUrl = "http://previous/" });
+            using var release = new ManualResetEventSlim();
+            var notified = new TaskCompletionSource<ModuleConfig>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var ct = TestContext.Current.CancellationToken;
+            ModuleConfig later = null;
+            ModuleConfig.Changed += config =>
+            {
+                notified.TrySetResult(config);
+                release.Wait(ct);
+                throw new InvalidOperationException("handler failed");
+            };
+            ModuleConfig.Changed += config => later = config;
+            var update = Task.Run(() => ModuleConfig.ApplyCommon("{\"statsUrl\":\"http://current/\"}"), ct);
+
+            try
+            {
+                Assert.Same(notified.Task, await Task.WhenAny(notified.Task, Task.Delay(5000, ct)));
+                var read = Task.Run(() => ModuleConfig.Current, ct);
+                Assert.Same(read, await Task.WhenAny(read, Task.Delay(5000, ct)));
+                Assert.Same(await notified.Task, await read);
+            }
+            finally
+            {
+                release.Set();
+                await update;
+                ModuleConfig.Reset();
+            }
+
+            Assert.Same(await notified.Task, later);
+        }
+
+        [Theory]
+        [InlineData(0, -1)]
+        [InlineData(int.MaxValue, 601)]
+        public void Out_of_range_file_intervals_fall_back_without_discarding_other_settings(int flushSeconds, int startupLockSeconds)
+        {
+            var directory = System.IO.Directory.CreateDirectory(System.IO.Path.Combine(System.IO.Path.GetTempPath(), Guid.NewGuid().ToString())).FullName;
+            var path = System.IO.Path.Combine(directory, ModuleConfig.FileName);
+            try
+            {
+                var file = new ModuleConfig
+                {
+                    StatsUrl = "http://file-settings/",
+                    ApiKey = "test-key",
+                    FlushSeconds = flushSeconds,
+                    StartupLockSeconds = startupLockSeconds,
+                    TrayMenu = false,
+                };
+                System.IO.File.WriteAllText(path, file.ToJson());
+
+                var loaded = ModuleConfig.Load(directory);
+                Assert.Equal(file.StatsUrl, loaded.StatsUrl);
+                Assert.Equal(file.ApiKey, loaded.ApiKey);
+                Assert.Equal(ModuleConfig.DefaultFlushSeconds, loaded.FlushSeconds);
+                Assert.Equal(ModuleConfig.DefaultStartupLockSeconds, loaded.StartupLockSeconds);
+                Assert.False(loaded.TrayMenu);
+            }
+            finally
+            {
+                System.IO.File.Delete(path);
+                System.IO.Directory.Delete(directory);
+            }
+        }
+
+        [Fact]
         public void Window_mode_falls_back_to_old_flag()
         {
             Assert.Equal(ModuleConfig.WindowAlways, ModuleConfig.Parse("{}").WindowMode);
@@ -145,8 +212,35 @@ namespace Pilot.ClientSdk.Tests
                 { StatsUrl = "http://new/api/module-events", FlushSeconds = int.MaxValue }));
             sender.Enqueue(new ModuleEvent());
 
-            Assert.True(await sender.FlushAsync());
+            Assert.Equal(FlushResult.Accepted, await sender.FlushAsync());
             Assert.Equal("http://old/api/module-events", Assert.Single(handler.Urls));
+        }
+
+        [Fact]
+        public async Task Out_of_order_notifications_keep_sender_on_latest_configuration()
+        {
+            ModuleConfig.Reset();
+            using var handler = new UrlHandler();
+            using var sender = new StatsSender();
+            try
+            {
+                ModuleConfig.Changed += config =>
+                {
+                    if (config.StatsUrl == "http://old/")
+                        ModuleConfig.ApplyCommon("{\"statsUrl\":\"http://new/\"}");
+                };
+                ModuleConfig.Changed += _ => sender.Configure();
+                sender.Start(config: null, env: null, handler: handler);
+                ModuleConfig.ApplyCommon("{\"statsUrl\":\"http://old/\"}");
+                sender.Enqueue(new ModuleEvent());
+
+                Assert.Equal(FlushResult.Accepted, await sender.FlushAsync());
+                Assert.Equal("http://new/", Assert.Single(handler.Urls));
+            }
+            finally
+            {
+                ModuleConfig.Reset();
+            }
         }
 
         [Fact]

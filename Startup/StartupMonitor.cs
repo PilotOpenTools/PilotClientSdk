@@ -161,8 +161,10 @@ namespace Pilot.ClientSdk.Startup
             try
             {
                 var warnings = state.Rows.Where(r => r.State == RowState.Warning).ToList();
-                ModuleLog.Info($"Проверка загрузки модулей: всего {state.Rows.Count}, проблем {state.ProblemRows.Count}, замечаний {warnings.Count}" +
-                               (state.Note == null ? "" : ". " + state.Note));
+                ModuleLog.Info($"Проверка загрузки модулей: всего {state.Rows.Count}, проблем {state.ProblemRows.Count}, замечаний {warnings.Count}");
+                var diagnostic = state.CheckError ?? state.Note;
+                if (diagnostic != null)
+                    ModuleLog.Warn(diagnostic);
                 foreach (var row in state.ProblemRows.Concat(warnings))
                     ModuleLog.Warn($"  {row.Title} {row.Version}: {row.Status}. {row.Details}");
 
@@ -172,8 +174,8 @@ namespace Pilot.ClientSdk.Startup
                 else
                 {
                     var details = state.ProblemRows.Select(r => $"{r.Title}: {r.Status}");
-                    if (!state.HasServerList)
-                        details = new[] { state.Note }.Concat(details);
+                    if (state.CheckError != null)
+                        details = new[] { state.CheckError }.Concat(details);
                     stats.Send(StatsAction, ModuleEventStatus.Error, null, state.Rows.Count, new ModulesNotLoadedException(
                         string.Join("; ", details)));
                 }

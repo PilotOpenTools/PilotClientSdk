@@ -125,6 +125,8 @@ namespace Pilot.ClientSdk.Startup
                 }
                 if (wrongVersion != null)
                 {
+                    if (!IsDevelopmentDirectory(wrongVersion.Directory))
+                        matched.Add(wrongVersion.Name);
                     row.Version = wrongVersion.Version;
                     Set(row, assembly != null || deadlinePassed ? RowState.Error : RowState.Waiting,
                         "другая версия", $"Назначена версия {module.Version}, загружена {wrongVersion.Version}.");
@@ -232,7 +234,7 @@ namespace Pilot.ClientSdk.Startup
         }
 
         private static bool VersionMismatch(ExpectedModule expected, LoadedModule loaded) =>
-            Version.TryParse(expected.Version, out var wanted) && Version.TryParse(loaded.Version, out var actual) &&
+            loaded.IsOwn && Version.TryParse(expected.Version, out var wanted) && Version.TryParse(loaded.Version, out var actual) &&
             ModuleVersions.Display(wanted) != ModuleVersions.Display(actual);
 
         private static bool IsDevelopmentDirectory(string directory) =>

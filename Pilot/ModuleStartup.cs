@@ -42,7 +42,7 @@ namespace Pilot.ClientSdk.Pilot
             _repository = repository;
             _clientInfo = clientInfo;
             // Общие настройки Pilot (раздел «Модули») важнее файла: подписка живёт весь сеанс клиента.
-            ModuleConfig.Changed += config => StatsSender.Default.Configure(config);
+            ModuleConfig.Changed += _ => StatsSender.Default.Configure();
             _settingsSubscription = CommonSettings.Subscribe(personalSettings);
             // StartupRunner не пробрасывает исключение: модуль не должен мешать клиенту запуститься.
             StartupRunner.Run(this);
@@ -50,8 +50,8 @@ namespace Pilot.ClientSdk.Pilot
 
         public void Initialize()
         {
+            StatsSender.Default.Start(config: null, env: ClientEnvironment.Capture(_repository, _clientInfo));
             var config = ModuleConfig.Current;
-            StatsSender.Default.Start(config, ClientEnvironment.Capture(_repository, _clientInfo));
             ModuleLog.Info($"Pilot.ClientSdk {ClientEnvironment.LibVersion} загружен. Настройки: {config.Source}. Статистика: " +
                            (config.StatsActive ? config.StatsUrl : "выключена"));
 
