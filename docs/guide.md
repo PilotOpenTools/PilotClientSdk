@@ -49,9 +49,15 @@
 
 ## 1. Быстрый старт
 
-Подключение - NuGet-пакет `Pilot.ClientSdk` из [nuget.org](https://www.nuget.org/packages/Pilot.ClientSdk) (с 2.1.3; `nuget.config` ниже тогда не нужен) или из реестра пакетов GitLab (подробно - [4.1](#41-nuget-пакет); первый раз на машине - подключить источник GitLab и войти, [4.2](#42-источник-gitlab-на-своей-машине)). Сборка в пакете лежит в `ref/net48`: она нужна только для компиляции и в `bin` и zip модуля не копируется. В клиенте её уже загрузил модуль `113Pilot.ClientSdk.ext2`, вторая копия дала бы конфликт типов.
+На NuGet.org пакет называется `PilotClientSdk`. Добавьте ссылку в `.csproj` модуля. [Страница пакета](https://www.nuget.org/packages/PilotClientSdk)
 
-`nuget.config` рядом с `.csproj` модуля (образец - в `Test-module`; адрес GitLab `gitlab.example.local` и `PROJECT_ID` замените на свои, см. [4.1](#41-nuget-пакет)):
+```xml
+<PackageReference Include="PilotClientSdk" Version="2.1.4" />
+```
+
+Сборка в `ref/net48` используется для компиляции. При запуске её загружает модуль `113Pilot.ClientSdk.ext2`.
+
+Для закрытого реестра GitLab используйте `PackageReference` с `Include="Pilot.ClientSdk"` и версией из реестра. Добавьте `nuget.config` рядом с `.csproj` и подставьте свой адрес GitLab и `PROJECT_ID`. [Настройка реестра](#41-nuget-пакет)
 
 ```xml
 <configuration>
@@ -65,12 +71,6 @@
     <packageSource key="cicd"><package pattern="Pilot.*" /></packageSource>
   </packageSourceMapping>
 </configuration>
-```
-
-`.csproj` модуля:
-
-```xml
-<PackageReference Include="Pilot.ClientSdk" Version="2.1.3" />
 ```
 
 Копию dll в папке `lib/` модуля больше не храните.
@@ -388,7 +388,7 @@ dotnet pack -c Release -o out   # NuGet-пакет Pilot.ClientSdk (ref/net48) -
 
 ### 4.2. Источник GitLab на своей машине
 
-Пакет лежит в GitLab, а не на nuget.org, поэтому Visual Studio (или `dotnet`) должна знать адрес источника и входить в него под вами. Это делается один раз на машине и действует для всех модулей.
+Для доступа к пакету `Pilot.ClientSdk` в GitLab добавьте источник и настройте аутентификацию в Visual Studio или `dotnet`. Это делается один раз на машине и действует для всех модулей.
 
 Адрес источника (подставьте адрес вашего GitLab и id проекта Pilot.ClientSdk):
 

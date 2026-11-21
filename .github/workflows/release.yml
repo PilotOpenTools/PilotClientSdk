@@ -1,6 +1,6 @@
 name: Release
 
-# Тег vX.Y.Z: проверка версии, сборка, тесты и GitHub Release с zip модуля, NuGet-пакетом и контрольными суммами.
+# Тег vX.Y.Z: проверка версии, сборка, тесты и GitHub Release с zip модуля, NuGet-пакетами и контрольными суммами.
 # Описание релиза - раздел версии из CHANGELOG.md; без него workflow падает.
 # Ручной запуск (Actions / Release / Run workflow) с тегом уже выпущенной версии только отправляет её пакет в nuget.org:
 # например, если политика Trusted Publishing появилась после релиза.
@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Тег выпущенного релиза, пакет которого отправить в nuget.org (например v2.1.3)'
+        description: 'Тег выпущенного релиза, пакет которого отправить в nuget.org (например v2.1.4)'
         required: true
 
 permissions:
@@ -61,6 +61,8 @@ jobs:
           New-Item -ItemType Directory -Force artifacts | Out-Null
           dotnet pack Pilot.ClientSdk.csproj -c Release --no-build -o artifacts --nologo
           if ($LASTEXITCODE) { throw "dotnet pack завершился с кодом $LASTEXITCODE" }
+          dotnet pack Pilot.ClientSdk.csproj -c Release --no-build -p:PackageId=PilotClientSdk -o artifacts --nologo
+          if ($LASTEXITCODE) { throw "dotnet pack PilotClientSdk завершился с кодом $LASTEXITCODE" }
           Copy-Item "bin/113Pilot.ClientSdk.ext2-$env:VERSION.zip" artifacts/
           Push-Location artifacts
           Get-ChildItem -File | Sort-Object Name | ForEach-Object {
@@ -82,7 +84,7 @@ jobs:
           $notes += ''
           $notes += '### Установка'
           $notes += ''
-          $notes += "Модуль: загрузите ``113Pilot.ClientSdk.ext2-$env:VERSION.zip`` на сервер Pilot и назначьте его пользователям раньше модулей, которые на нём построены. Разработчикам модулей: ``Pilot.ClientSdk.$env:VERSION.nupkg`` (сборка только для компиляции). Подробнее: [README](https://github.com/PilotOpenTools/PilotClientSdk#установка)."
+          $notes += "Модуль: загрузите ``113Pilot.ClientSdk.ext2-$env:VERSION.zip`` на сервер Pilot и назначьте его пользователям раньше модулей, которые на нём построены. Разработчикам модулей: [``PilotClientSdk``](https://www.nuget.org/packages/PilotClientSdk/$env:VERSION) на NuGet.org (сборка только для компиляции). Подробнее: [README](https://github.com/PilotOpenTools/PilotClientSdk#установка)."
           $notes | Set-Content -LiteralPath release-notes.md -Encoding UTF8
 
       - name: Publish GitHub Release
@@ -105,31 +107,24 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.value }}
         run: |
-          foreach ($pkg in Get-ChildItem artifacts -Filter *.nupkg) {
-            dotnet nuget push $pkg.FullName --source "https://nuget.pkg.github.com/$($env:GITHUB_REPOSITORY_OWNER)/index.json" --api-key $env:GH_TOKEN --skip-duplicate
-            if ($LASTEXITCODE -ne 0) { throw "dotnet nuget push $($pkg.Name) в GitHub Packages завершился с кодом $LASTEXITCODE" }
-          }
+          dotnet nuget push "artifacts/Pilot.ClientSdk.$env:VERSION.nupkg" --source "https://nuget.pkg.github.com/$($env:GITHUB_REPOSITORY_OWNER)/index.json" --api-key $env:GH_TOKEN --skip-duplicate
 
-      # Trusted Publishing nuget.org: GitHub выдаёт заданию токен OIDC, nuget.org меняет его на ключ API на 1 час.
-      # Постоянного ключа нет ни в репозитории, ни в секретах. Политика на nuget.org (профиль tsaregorlionheart):
-      # владелец PilotOpenTools, репозиторий PilotClientSdk, файл release.yml. Публикация необратима: версию можно только скрыть.
-      # Без --skip-duplicate: с ним ответ 409 Conflict - лишь предупреждение, и шаг зелёный, хотя пакет не опубликован (так было с 2.1.2).
+      # Без --skip-duplicate: NuGet.org возвращает 409 и для зарезервированных ID.
       - name: NuGet login
         id: nuget-login
-        uses: NuGet/login@v1
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1
         with:
-          user: tsaregorlionheart
+          user: mahach
 
       - name: Push to nuget.org
         shell: pwsh
         env:
           NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
+          VERSION: ${{ steps.version.outputs.value }}
         run: |
-          foreach ($pkg in Get-ChildItem artifacts -Filter *.nupkg) {
-            dotnet nuget push $pkg.FullName --source https://api.nuget.org/v3/index.json --api-key $env:NUGET_API_KEY
-            if ($LASTEXITCODE -ne 0) { throw "dotnet nuget push $($pkg.Name) в nuget.org завершился с кодом $LASTEXITCODE" }
-          }
+          dotnet nuget push "artifacts/PilotClientSdk.$env:VERSION.nupkg" --source https://api.nuget.org/v3/index.json --api-key $env:NUGET_API_KEY
 
   nuget:
     if: github.event_name == 'workflow_dispatch'
@@ -142,21 +137,20 @@ jobs:
           TAG: ${{ inputs.tag }}
         run: |
           [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Тег должен быть вида vX.Y.Z: $TAG"; exit 1; }
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern 'Pilot.ClientSdk.*.nupkg' --pattern SHA256SUMS.txt --dir artifacts
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "PilotClientSdk.${TAG#v}.nupkg" --pattern SHA256SUMS.txt --dir artifacts
           cd artifacts
           sha256sum --check --ignore-missing SHA256SUMS.txt
           ls -la
 
       - name: NuGet login
         id: nuget-login
-        uses: NuGet/login@v1
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1
         with:
-          user: tsaregorlionheart
+          user: mahach
 
       - name: Push to nuget.org
         env:
           NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
+          TAG: ${{ inputs.tag }}
         run: |
-          for pkg in artifacts/*.nupkg; do
-            dotnet nuget push "$pkg" --source https://api.nuget.org/v3/index.json --api-key "$NUGET_API_KEY"
-          done
+          dotnet nuget push "artifacts/PilotClientSdk.${TAG#v}.nupkg" --source https://api.nuget.org/v3/index.json --api-key "$NUGET_API_KEY"
