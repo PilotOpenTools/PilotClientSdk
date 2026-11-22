@@ -69,16 +69,13 @@
 		<PackageReference Include="Ascon.Pilot.SDK" Version="26.13.0">
 			<ExcludeAssets>runtime</ExcludeAssets>
 		</PackageReference>
-		<PackageReference Include="DocumentFormat.OpenXml" Version="3.5.1" PrivateAssets="all" />
 		<PackageReference Include="Humanizer.Core.ru" Version="2.14.1" PrivateAssets="all" />
-		<PackageReference Include="SharpVectors" Version="1.8.6" PrivateAssets="all" />
 	</ItemGroup>
 
 	<!--
 		Общие сторонние библиотеки для других модулей (эксперимент 2.1.0). В zip этого модуля лежит только Humanizer.dll
 		(см. CreateReleaseZip); другие модули ссылаются на неё только для компиляции (ExcludeAssets=runtime). В клиенте Pilot
 		недостающую dll модуля ищут обработчики AssemblyResolve всех уже загруженных модулей - в том числе этого, по его папке.
-		DocumentFormat.OpenXml и SharpVectors в коде модуля не используются и в zip не входят.
 		PrivateAssets=all - зависимости не попадают в NuGet-пакет Pilot.ClientSdk (в пакете их нет).
 	-->
 

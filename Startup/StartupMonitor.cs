@@ -78,7 +78,7 @@ namespace Pilot.ClientSdk.Startup
                         if (!state.IsDone && !deadline)
                             return;
                         poll.Stop();
-                        if (state.Rows.Any(IsProblem))
+                        if (state.HasProblems)
                             Show(TimeSpan.Zero, autoClose: false, modal: true);
                         else
                             Report(state);
@@ -91,9 +91,6 @@ namespace Pilot.ClientSdk.Startup
                     break;
             }
         }
-
-        private static bool IsProblem(RowResult row) =>
-            row.State == RowState.Error || row.State == RowState.Waiting || row.State == RowState.Running;
 
         /// <summary>Открыть окно повторно (пункт трея): немодальное, закрывается сразу.</summary>
         public static void ShowReport()
@@ -156,27 +153,32 @@ namespace Pilot.ClientSdk.Startup
                 note = "Список модулей с сервера получить не удалось - показаны только загруженные модули.";
 
             var isDone = (expectedReady || deadlinePassed) && rows.All(r => r.IsDone);
-            return new StartupState(rows, note, isDone);
+            return new StartupState(rows, note, isDone, expected != null);
         }
 
         private static void Report(StartupState state)
         {
             try
             {
-                var problems = state.Rows.Where(IsProblem).ToList();
                 var warnings = state.Rows.Where(r => r.State == RowState.Warning).ToList();
-                ModuleLog.Info($"Проверка загрузки модулей: всего {state.Rows.Count}, проблем {problems.Count}, замечаний {warnings.Count}" +
-                               (state.Note == null ? "" : ". " + state.Note));
-                foreach (var row in problems.Concat(warnings))
+                ModuleLog.Info($"Проверка загрузки модулей: всего {state.Rows.Count}, проблем {state.ProblemRows.Count}, замечаний {warnings.Count}");
+                var diagnostic = state.CheckError ?? state.Note;
+                if (diagnostic != null)
+                    ModuleLog.Warn(diagnostic);
+                foreach (var row in state.ProblemRows.Concat(warnings))
                     ModuleLog.Warn($"  {row.Title} {row.Version}: {row.Status}. {row.Details}");
 
                 var stats = ModuleStats.For(typeof(StartupMonitor).Assembly);
-                var errors = state.Rows.Where(r => r.State == RowState.Error).ToList();
-                if (errors.Count == 0)
+                if (!state.HasProblems)
                     stats.Send(StatsAction, ModuleEventStatus.Success, null, state.Rows.Count, null);
                 else
+                {
+                    var details = state.ProblemRows.Select(r => $"{r.Title}: {r.Status}");
+                    if (state.CheckError != null)
+                        details = new[] { state.CheckError }.Concat(details);
                     stats.Send(StatsAction, ModuleEventStatus.Error, null, state.Rows.Count, new ModulesNotLoadedException(
-                        string.Join("; ", errors.Select(r => $"{r.Title}: {r.Status}"))));
+                        string.Join("; ", details)));
+                }
             }
             catch (Exception ex)
             {

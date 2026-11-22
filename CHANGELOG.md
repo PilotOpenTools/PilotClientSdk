@@ -2,6 +2,10 @@
 
 Формат: раздел `## [X.Y.Z] - дата` на каждую версию. Текст раздела становится описанием GitLab Release.
 
+## [Unreleased]
+
+- Если `flushSeconds` или `startupLockSeconds` в `Pilot.ClientSdk.config.json` выходят за допустимый диапазон, для этих полей используются 15 секунд. Адрес статистики и остальные корректные настройки читаются из файла.
+
 ## [2.1.4] - 2026-11-21
 
 - Публичный пакет `PilotClientSdk` выпускается через NuGet.org Trusted Publishing. Идентификатор `Pilot.ClientSdk` используется в GitHub Packages и GitLab.

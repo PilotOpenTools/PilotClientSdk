@@ -52,6 +52,11 @@ dotnet add package PilotClientSdk
 ## Быстрый старт
 
 ```csharp
+using System;
+using System.ComponentModel.Composition;
+using System.Windows;
+using Ascon.Pilot.SDK;
+using Ascon.Pilot.SDK.Menu;
 using Pilot.ClientSdk;
 using Pilot.ClientSdk.Telemetry;
 
@@ -72,12 +77,28 @@ public class StartPoint : IMenu<ObjectsViewContext>, IModule
     public void Build(IMenuBuilder builder, ObjectsViewContext context) =>
         builder.AddItem("Count", 0).WithHeader("Посчитать документы");
 
-    public async void OnMenuItemClick(string name, ObjectsViewContext context) =>
-        await Stats.RunAsync("Посчитать документы", async op =>
+    public async void OnMenuItemClick(string name, ObjectsViewContext context)
+    {
+        if (name != "Count")
+            return;
+
+        try
         {
-            var docs = await PilotApi.Searcher.ByTypeAsync("pir_doc");
-            op.Items = docs.Count;        // сколько обработано - в Grafana
-        });
+            await Stats.RunAsync("Посчитать документы", async op =>
+            {
+                var docs = await PilotApi.Searcher.ByTypeAsync("pir_doc");
+                op.Items = docs.Count;
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            MessageBox.Show("Подсчёт отменён.");
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show("Не удалось посчитать документы. " + ex.Message);
+        }
+    }
 }
 ```
 
@@ -113,6 +134,8 @@ Debug-сборка копирует модуль в `%LocalAppData%\ASCON\Pilot-
 Для публикации на NuGet.org workflow получает временный ключ по OIDC. Политика профиля `mahach` разрешает пакеты `PilotClientSdk*` из `PilotOpenTools/PilotClientSdk` через `release.yml`. Если загрузка пакета не удалась, запустите workflow Release вручную и передайте тег уже созданного GitHub Release. [Документация Trusted Publishing](https://learn.microsoft.com/nuget/nuget-org/trusted-publishing)
 
 В GitLab стенда PilotProAdmin модуль ведётся по схеме веток `dev` / `release/*` / `main` с выкладкой на тест, стейдж и прод: этим занимается [.gitlab-ci.yml](.gitlab-ci.yml), подробно в [руководстве](docs/guide.md#4-сборка-выпуск-cicd).
+
+Для выкладки в прод и публикации `nuget_release` нужен доступный GitLab Runner с тегом `windows`. Пока такой раннер не возьмёт обязательное задание `test`, оба задания будут ждать.
 
 ## Участие
 

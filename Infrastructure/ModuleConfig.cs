@@ -20,6 +20,8 @@ namespace Pilot.ClientSdk.Infrastructure
         public const string FileName = "Pilot.ClientSdk.config.json";
         public const int DefaultFlushSeconds = 15;
         public const int DefaultStartupLockSeconds = 15;
+        private const int MaxFlushSeconds = 3600;
+        private const int MaxStartupLockSeconds = 600;
 
         public const string WindowAlways = "always";
         public const string WindowOnProblems = "problems";
@@ -145,13 +147,20 @@ namespace Pilot.ClientSdk.Infrastructure
                 _current = next;
             }
             ModuleLog.Info($"Настройки Pilot.ClientSdk: {next.Source}. Статистика: {(next.StatsActive ? next.StatsUrl : "выключена")}, окно загрузки: {next.WindowMode}");
-            try
+
+            var handlers = Changed;
+            if (handlers == null)
+                return;
+            foreach (Action<ModuleConfig> handler in handlers.GetInvocationList())
             {
-                Changed?.Invoke(next);
-            }
-            catch (Exception ex)
-            {
-                ModuleLog.Warn("Не удалось применить новые настройки", ex);
+                try
+                {
+                    handler(next);
+                }
+                catch (Exception ex)
+                {
+                    ModuleLog.Warn("Обработчик изменения настроек завершился с ошибкой", ex);
+                }
             }
         }
 
@@ -161,29 +170,54 @@ namespace Pilot.ClientSdk.Infrastructure
             var config = TryRead(path);
             if (config != null)
                 config.Source = "файл " + FileName;
-            return Normalize(config ?? new ModuleConfig());
+            return config ?? Normalize(new ModuleConfig());
         }
 
         private static ModuleConfig Normalize(ModuleConfig config)
         {
             var envUrl = Environment.GetEnvironmentVariable("CLIENTSDK_STATS_URL");
             if (!string.IsNullOrWhiteSpace(envUrl))
-                config.StatsUrl = envUrl.Trim();
+            {
+                if (IsHttpUrl(envUrl.Trim()))
+                    config.StatsUrl = envUrl.Trim();
+                else
+                    ModuleLog.Warn("CLIENTSDK_STATS_URL: ожидается абсолютный адрес HTTP или HTTPS");
+            }
             config.StatsUrl = string.IsNullOrWhiteSpace(config.StatsUrl) ? null : config.StatsUrl.Trim();
-            if (config.FlushSeconds < 1)
-                config.FlushSeconds = DefaultFlushSeconds;
-            if (config.StartupLockSeconds < 0)
-                config.StartupLockSeconds = DefaultStartupLockSeconds;
+            var error = config.ValidationError();
+            if (error != null)
+                throw new ArgumentException(error);
             config.IgnoredModules = (config.IgnoredModules ?? Array.Empty<string>())
                 .Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()).ToArray();
             return config;
         }
 
+        internal string ValidationError(bool requireStatsUrl = false)
+        {
+            if (!string.IsNullOrWhiteSpace(StatsUrl) && !IsHttpUrl(StatsUrl))
+                return "Адрес сервиса статистики должен начинаться с http:// или https://.";
+            if (requireStatsUrl && StatsEnabled && string.IsNullOrWhiteSpace(StatsUrl))
+                return "Статистика включена, но адрес сервиса не задан.";
+            if (ApiKey != null && ApiKey.Any(char.IsControl))
+                return "API-ключ содержит управляющие символы.";
+            if (!ValidFlushSeconds)
+                return $"Интервал отправки - от 1 до {MaxFlushSeconds} секунд.";
+            if (!ValidStartupLockSeconds)
+                return $"Ожидание загрузки модулей - от 0 до {MaxStartupLockSeconds} секунд.";
+            return null;
+        }
+
+        private bool ValidFlushSeconds => FlushSeconds >= 1 && FlushSeconds <= MaxFlushSeconds;
+        private bool ValidStartupLockSeconds => StartupLockSeconds >= 0 && StartupLockSeconds <= MaxStartupLockSeconds;
+
+        internal static bool IsHttpUrl(string url) =>
+            Uri.TryCreate(url, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+
         internal static ModuleConfig Parse(string json)
         {
             var serializer = new DataContractJsonSerializer(typeof(ModuleConfig));
             using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(json)))
-                return (ModuleConfig)serializer.ReadObject(stream);
+                return (ModuleConfig)serializer.ReadObject(stream) ?? throw new SerializationException("Ожидался объект настроек.");
         }
 
         /// <summary>JSON для общих настроек Pilot (с отступами - его видно в окне настроек как текст).</summary>
@@ -226,7 +260,20 @@ namespace Pilot.ClientSdk.Infrastructure
         {
             try
             {
-                return System.IO.File.Exists(path) ? Parse(System.IO.File.ReadAllText(path, Encoding.UTF8)) : null;
+                if (!System.IO.File.Exists(path))
+                    return null;
+                var config = Parse(System.IO.File.ReadAllText(path, Encoding.UTF8));
+                if (!config.ValidFlushSeconds)
+                {
+                    config.FlushSeconds = DefaultFlushSeconds;
+                    ModuleLog.Warn($"В {FileName} недопустимое значение flushSeconds. Используем {DefaultFlushSeconds} с.");
+                }
+                if (!config.ValidStartupLockSeconds)
+                {
+                    config.StartupLockSeconds = DefaultStartupLockSeconds;
+                    ModuleLog.Warn($"В {FileName} недопустимое значение startupLockSeconds. Используем {DefaultStartupLockSeconds} с.");
+                }
+                return Normalize(config);
             }
             catch (Exception ex)
             {

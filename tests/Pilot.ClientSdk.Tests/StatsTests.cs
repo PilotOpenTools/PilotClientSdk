@@ -171,22 +171,63 @@ namespace Pilot.ClientSdk.Tests
                 stats.Use("a" + i);           // до старта - копятся в очереди
             sender.Start(new ModuleConfig { StatsUrl = "http://collector/api/module-events", FlushSeconds = 3600 }, null, handler);
 
-            await sender.FlushAsync();
+            Assert.Equal(FlushResult.Failed, await sender.FlushAsync());
 
             // Первая пачка потеряна (503), остаток ждёт следующего тика, а не долбит недоступный сервис.
             Assert.Single(handler.Bodies);
             Assert.Equal(StatsSender.BatchSize + 50, sender.Queued);
         }
 
+        [Fact]
+        public async Task Flush_with_empty_queue_does_not_attempt_a_request()
+        {
+            using var handler = new CaptureHandler();
+            using var sender = Started(handler);
+
+            Assert.Equal(FlushResult.NotAttempted, await sender.FlushAsync());
+            Assert.Empty(handler.Bodies);
+        }
+
+        [Fact]
+        public async Task Shutdown_waits_for_active_request_and_flushes_remaining_events()
+        {
+            using var handler = new CaptureHandler
+            {
+                FirstResponse = new TaskCompletionSource<HttpStatusCode>(TaskCreationOptions.RunContinuationsAsynchronously)
+            };
+            using var sender = new StatsSender();
+            sender.Start(new ModuleConfig { StatsUrl = "http://collector/api/module-events", FlushSeconds = 3600 }, null, handler);
+            sender.Enqueue(new ModuleEvent());
+            var flushing = sender.FlushAsync();
+            await handler.FirstRequest.Task;
+            sender.Enqueue(new ModuleEvent());
+
+            var stopping = Task.Run(() => sender.Stop(TimeSpan.FromSeconds(5)), TestContext.Current.CancellationToken);
+            try
+            {
+                Assert.True(SpinWait.SpinUntil(() => !sender.Accepting, TimeSpan.FromSeconds(2)));
+                Assert.False(stopping.IsCompleted);
+            }
+            finally
+            {
+                handler.FirstResponse.TrySetResult(HttpStatusCode.ServiceUnavailable);
+            }
+
+            Assert.Equal(FlushResult.Failed, await flushing);
+            await stopping;
+            Assert.Equal(0, sender.Queued);
+            Assert.Equal(2, handler.Bodies.Count);
+        }
+
         [CollectorFact]
         public async Task Real_collector_accepts_events_when_configured()
         {
             var url = Environment.GetEnvironmentVariable(CollectorFactAttribute.UrlVariable);
-            var sender = new StatsSender();
+            using var sender = new StatsSender();
             sender.Start(new ModuleConfig { StatsUrl = url, FlushSeconds = 3600 },
                 new ClientEnvironment { Login = "it-test", Person = "Интеграционный тест", Server = "http://localhost:5547/it" });
             new ModuleStats(new ModuleIdentity("999ItTest.ext2", "Интеграционный тест Pilot.ClientSdk", "1.0.0.0"), sender).Use("it");
-            await sender.FlushAsync();
+            Assert.Equal(FlushResult.Accepted, await sender.FlushAsync());
             Assert.Equal(0, sender.Queued);
         }
 
@@ -203,14 +244,23 @@ namespace Pilot.ClientSdk.Tests
             public List<string> Bodies { get; } = new List<string>();
             public string ClientTime { get; private set; }
             public HttpStatusCode Status { get; set; } = HttpStatusCode.OK;
+            public TaskCompletionSource<bool> FirstRequest { get; } = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            public TaskCompletionSource<HttpStatusCode> FirstResponse { get; set; }
 
             protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             {
                 var body = await request.Content.ReadAsStringAsync();
+                bool first;
                 lock (Bodies)
+                {
+                    first = Bodies.Count == 0;
                     Bodies.Add(body);
+                }
                 ClientTime = request.Headers.TryGetValues("X-Client-Time", out var v) ? v.First() : null;
-                return new HttpResponseMessage(Status) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+                if (first)
+                    FirstRequest.TrySetResult(true);
+                var status = first && FirstResponse != null ? await FirstResponse.Task : Status;
+                return new HttpResponseMessage(status) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
             }
         }
     }

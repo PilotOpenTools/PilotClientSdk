@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Reflection;
+using Pilot.ClientSdk.Telemetry;
 
 namespace Pilot.ClientSdk.Startup
 {
@@ -26,7 +29,7 @@ namespace Pilot.ClientSdk.Startup
     /// <summary>Сборка *.ext2, загруженная в клиент.</summary>
     internal sealed class LoadedModule
     {
-        public LoadedModule(string name, string title, string version, string directory, bool isOwn, bool implementsContract)
+        public LoadedModule(string name, string title, string version, string directory, bool isOwn, bool implementsContract, Assembly assembly = null)
         {
             Name = name;
             Title = title;
@@ -34,6 +37,7 @@ namespace Pilot.ClientSdk.Startup
             Directory = directory;
             IsOwn = isOwn;
             ImplementsContract = implementsContract;
+            Assembly = assembly;
         }
 
         public string Name { get; }
@@ -47,6 +51,7 @@ namespace Pilot.ClientSdk.Startup
 
         /// <summary>В сборке есть класс с <see cref="IModule"/> / <see cref="IModuleAsync"/>.</summary>
         public bool ImplementsContract { get; }
+        public Assembly Assembly { get; }
     }
 
     internal enum RowState
@@ -108,9 +113,25 @@ namespace Pilot.ClientSdk.Startup
                     continue;
                 }
 
-                var names = dllNamesIn(folder) ?? Array.Empty<string>();
-                var assembly = loaded.FirstOrDefault(a => SameDirectory(a.Directory, folder))
-                               ?? loaded.FirstOrDefault(a => names.Contains(a.Name, StringComparer.OrdinalIgnoreCase));
+                var assembly = loaded.FirstOrDefault(a => SameDirectory(a.Directory, folder));
+                var wrongVersion = assembly != null && VersionMismatch(module, assembly) ? assembly : null;
+                if (assembly == null)
+                {
+                    var names = dllNamesIn(folder) ?? Array.Empty<string>();
+                    var candidates = loaded.Where(a => names.Contains(a.Name, StringComparer.OrdinalIgnoreCase)).ToList();
+                    assembly = candidates.FirstOrDefault(a => !IsDevelopmentDirectory(a.Directory) && !VersionMismatch(module, a));
+                    if (assembly == null)
+                        wrongVersion = candidates.FirstOrDefault(a => VersionMismatch(module, a));
+                }
+                if (wrongVersion != null)
+                {
+                    if (!IsDevelopmentDirectory(wrongVersion.Directory))
+                        matched.Add(wrongVersion.Name);
+                    row.Version = wrongVersion.Version;
+                    Set(row, assembly != null || deadlinePassed ? RowState.Error : RowState.Waiting,
+                        "другая версия", $"Назначена версия {module.Version}, загружена {wrongVersion.Version}.");
+                    continue;
+                }
                 if (assembly == null)
                 {
                     if (deadlinePassed)
@@ -122,6 +143,8 @@ namespace Pilot.ClientSdk.Startup
                 }
 
                 matched.Add(assembly.Name);
+                if (!string.IsNullOrWhiteSpace(assembly.Version))
+                    row.Version = ModuleVersions.Display(assembly.Version);
                 FillFromAssembly(row, assembly, reports, deadlinePassed);
             }
 
@@ -155,7 +178,8 @@ namespace Pilot.ClientSdk.Startup
             if (string.IsNullOrWhiteSpace(row.Version))
                 row.Version = assembly.Version;
 
-            var own = reports.Where(r => string.Equals(r.Module, assembly.Name, StringComparison.OrdinalIgnoreCase)).ToList();
+            var own = reports.Where(r => string.Equals(r.Module, assembly.Name, StringComparison.OrdinalIgnoreCase) &&
+                                         (r.Assembly == null || r.Assembly == assembly.Assembly)).ToList();
             if (own.Count > 0)
             {
                 FillFromReports(row, own, deadlinePassed);
@@ -208,5 +232,13 @@ namespace Pilot.ClientSdk.Startup
                 return false;
             return string.Equals(a.TrimEnd('\\', '/'), b.TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase);
         }
+
+        private static bool VersionMismatch(ExpectedModule expected, LoadedModule loaded) =>
+            loaded.IsOwn && Version.TryParse(expected.Version, out var wanted) && Version.TryParse(loaded.Version, out var actual) &&
+            ModuleVersions.Display(wanted) != ModuleVersions.Display(actual);
+
+        private static bool IsDevelopmentDirectory(string directory) =>
+            directory != null && string.Equals(Path.GetFileName(Path.GetDirectoryName(directory)),
+                "Development", StringComparison.OrdinalIgnoreCase);
     }
 }
